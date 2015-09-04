@@ -1,0 +1,11 @@
+# Git Ignores for the Apache-Nutch Install Home Dir
+# based on the apache nutch project git directory.
+
+conf/*.txt
+conf/*.xml
+conf/hadoop-env.sh
+conf/slaves
+build/
+runtime/
+logs/
+/bin/

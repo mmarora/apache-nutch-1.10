@@ -1,0 +1,10 @@
+--- src/plugin/build.xml	(Revision 603)
++++ src/plugin/build.xml	(Arbeitskopie)
+@@ -62,6 +62,7 @@
+      <ant dir="urlnormalizer-basic" target="deploy"/>
+      <ant dir="urlnormalizer-pass" target="deploy"/>
+      <ant dir="urlnormalizer-regex" target="deploy"/>
++  	 <ant dir="index-blacklist-whitelist" target="deploy"/>
+   </target>
+ 
+   <!-- ====================================================== -->

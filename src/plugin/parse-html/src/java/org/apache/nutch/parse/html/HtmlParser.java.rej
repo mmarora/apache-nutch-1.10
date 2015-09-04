@@ -1,0 +1,34 @@
+--- src/plugin/parse-html/src/java/org/apache/nutch/parse/html/HtmlParser.java	(revision 1171853)
++++ src/plugin/parse-html/src/java/org/apache/nutch/parse/html/HtmlParser.java	(working copy)
+@@ -112,6 +113,13 @@
+   
+   private String cachingPolicy;
+   
++  // The list of node to be excluded.
++  // Each array has 3 position:
++  // 1st: tag name
++  // 2nd: attribute name
++  // 3rd: attribute value
++  private String [][] nodesToExclude;
++
+   public ParseResult getParse(Content content) {
+     HTMLMetaTags metaTags = new HTMLMetaTags();
+ 
+@@ -188,17 +213,6 @@
+       utils.getTitle(sb, root);         // extract title
+       title = sb.toString().trim();
+     }
+-      
+-    if (!metaTags.getNoFollow()) {              // okay to follow links
+-      ArrayList<Outlink> l = new ArrayList<Outlink>();   // extract outlinks
+-      URL baseTag = utils.getBase(root);
+-      if (LOG.isTraceEnabled()) { LOG.trace("Getting links..."); }
+-      utils.getOutlinks(baseTag!=null?baseTag:base, l, root);
+-      outlinks = l.toArray(new Outlink[l.size()]);
+-      if (LOG.isTraceEnabled()) {
+-        LOG.trace("found "+outlinks.length+" outlinks in "+content.getUrl());
+-      }
+-    }
+     
+     ParseStatus status = new ParseStatus(ParseStatus.SUCCESS);
+     if (metaTags.getRefresh()) {
