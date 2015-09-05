@@ -149,285 +149,441 @@ public class HtmlParser implements Parser
 	private HtmlParseFilters htmlParseFilters;
 
 	private String cachingPolicy;
+	
+	private String nodesExcludeMode; 
 
-	private String [][] nodesToExclude;
+	// The list of nodes to whitelist or blacklist.
+	// Each array has 3 position:
+	// 1st: tag name
+	// 2nd: attribute name
+	// 3rd: attribute value
+	private String [][] nodesExcludeList;
 
-  public ParseResult getParse(Content content) {
-    HTMLMetaTags metaTags = new HTMLMetaTags();
+	public ParseResult getParse(Content content) 
+	{
+		HTMLMetaTags metaTags = new HTMLMetaTags();
 
-    URL base;
-    try {
-      base = new URL(content.getBaseUrl());
-    } catch (MalformedURLException e) {
-      return new ParseStatus(e)
-          .getEmptyParseResult(content.getUrl(), getConf());
-    }
-
-    String text = "";
-    String title = "";
-    Outlink[] outlinks = new Outlink[0];
-    Metadata metadata = new Metadata();
-
-    // parse the content
-    DocumentFragment root;
-    try {
-      byte[] contentInOctets = content.getContent();
-      InputSource input = new InputSource(new ByteArrayInputStream(
-          contentInOctets));
-
-      EncodingDetector detector = new EncodingDetector(conf);
-      detector.autoDetectClues(content, true);
-      detector.addClue(sniffCharacterEncoding(contentInOctets), "sniffed");
-      String encoding = detector.guessEncoding(content, defaultCharEncoding);
-
-      metadata.set(Metadata.ORIGINAL_CHAR_ENCODING, encoding);
-      metadata.set(Metadata.CHAR_ENCODING_FOR_CONVERSION, encoding);
-
-      input.setEncoding(encoding);
-      if (LOG.isTraceEnabled()) {
-        LOG.trace("Parsing...");
-      }
-      root = parse(input);
-    } catch (IOException e) {
-      return new ParseStatus(e)
-          .getEmptyParseResult(content.getUrl(), getConf());
-    } catch (DOMException e) {
-      return new ParseStatus(e)
-          .getEmptyParseResult(content.getUrl(), getConf());
-    } catch (SAXException e) {
-      return new ParseStatus(e)
-          .getEmptyParseResult(content.getUrl(), getConf());
-    } catch (Exception e) {
-      LOG.error("Error: ", e);
-      return new ParseStatus(e)
-          .getEmptyParseResult(content.getUrl(), getConf());
-    }
-
-    // get meta directives
-    HTMLMetaProcessor.getMetaTags(metaTags, root, base);
-    if (LOG.isTraceEnabled()) {
-      LOG.trace("Meta tags for " + base + ": " + metaTags.toString());
-    }
- 
-	if ((this.nodesToExclude != null) && (this.nodesToExclude.length > 0)) {
-
-	  LOG.info("Stripping navigation...");
-	  stripNavigation(root);
-	}
-          
-    if (!metaTags.getNoFollow()) {              // okay to follow links
-      ArrayList<Outlink> l = new ArrayList<Outlink>();   // extract outlinks
-      URL baseTag = utils.getBase(root);
-      if (LOG.isTraceEnabled()) { LOG.trace("Getting links..."); }
-      utils.getOutlinks(baseTag!=null?baseTag:base, l, root);
-      outlinks = l.toArray(new Outlink[l.size()]);
-      if (LOG.isTraceEnabled()) {
-        LOG.trace("found "+outlinks.length+" outlinks in "+content.getUrl());
-      }
-    }
-    
-    // check meta directives
-    if (!metaTags.getNoIndex()) { // okay to index
-      StringBuffer sb = new StringBuffer();
-      if (LOG.isTraceEnabled()) {
-        LOG.trace("Getting text...");
-      }
-      utils.getText(sb, root); // extract text
-      text = sb.toString();
-      sb.setLength(0);
-      if (LOG.isTraceEnabled()) {
-        LOG.trace("Getting title...");
-      }
-      utils.getTitle(sb, root); // extract title
-      title = sb.toString().trim();
-    }
-
-    ParseStatus status = new ParseStatus(ParseStatus.SUCCESS);
-    if (metaTags.getRefresh()) {
-      status.setMinorCode(ParseStatus.SUCCESS_REDIRECT);
-      status.setArgs(new String[] { metaTags.getRefreshHref().toString(),
-          Integer.toString(metaTags.getRefreshTime()) });
-    }
-    ParseData parseData = new ParseData(status, title, outlinks,
-        content.getMetadata(), metadata);
-    ParseResult parseResult = ParseResult.createParseResult(content.getUrl(),
-        new ParseImpl(text, parseData));
-
-    // run filters on parse
-    ParseResult filteredParse = this.htmlParseFilters.filter(content,
-        parseResult, metaTags, root);
-    if (metaTags.getNoCache()) { // not okay to cache
-      for (Map.Entry<org.apache.hadoop.io.Text, Parse> entry : filteredParse)
-        entry.getValue().getData().getParseMeta()
-            .set(Nutch.CACHING_FORBIDDEN_KEY, cachingPolicy);
-    }
-    return filteredParse;
-  }
-
-	protected void stripNavigation(Node pNode) {
-
-		// do we need to strip this node itself?
-		boolean wasStripped = false;
-		for ( int i = 0 ; i < this.nodesToExclude.length ; ++i )
+		URL base;
+		try 
 		{
-			if (this.nodesToExclude[i][0].equalsIgnoreCase(pNode.getNodeName()) && pNode.hasAttributes()) {
+			base = new URL(content.getBaseUrl());
+		} 
+		catch (MalformedURLException e) 
+		{
+			return new ParseStatus(e)
+			.getEmptyParseResult(content.getUrl(), getConf());
+		}
 
-				Node idNode = pNode.getAttributes().getNamedItem(this.nodesToExclude[i][1]);
-				String idValue = (idNode != null) ? idNode.getNodeValue() : null;
-				if (idValue != null) {
-					if ( idValue.equalsIgnoreCase(this.nodesToExclude[i][2]) ) {
+		String text = "";
+		String title = "";
+		Outlink[] outlinks = new Outlink[0];
+		Metadata metadata = new Metadata();
 
-						// can't remove this node, but we can strip it
-						if (LOG.isTraceEnabled())
-							LOG.trace("Stripping " + pNode.getNodeName() + "#" + idNode.getNodeValue());
-						pNode.setNodeValue("");
+		// Document Fragment for Whitelisted Content.
+		DocumentFragment rootWhiteListed = null;
 
-						// remove all children for this node
-						while (pNode.hasChildNodes())
-							pNode.removeChild(pNode.getFirstChild());
+		// parse the content
+		DocumentFragment root;
+		try 
+		{
+			byte[] contentInOctets = content.getContent();
+			InputSource input = new InputSource(new ByteArrayInputStream(
+				contentInOctets));
 
-						wasStripped = true;
-						break;
+			EncodingDetector detector = new EncodingDetector(conf);
+			detector.autoDetectClues(content, true);
+			detector.addClue(sniffCharacterEncoding(contentInOctets), "sniffed");
+			String encoding = detector.guessEncoding(content, defaultCharEncoding);
+
+			metadata.set(Metadata.ORIGINAL_CHAR_ENCODING, encoding);
+			metadata.set(Metadata.CHAR_ENCODING_FOR_CONVERSION, encoding);
+
+			input.setEncoding(encoding);
+			if (LOG.isTraceEnabled()) 
+			{
+				LOG.trace("Parsing...");
+			}
+			root = parse(input);
+		} 
+		catch (IOException e) 
+		{
+			return new ParseStatus(e)
+			.getEmptyParseResult(content.getUrl(), getConf());
+		} 
+		catch (DOMException e) 
+		{
+			return new ParseStatus(e)
+			.getEmptyParseResult(content.getUrl(), getConf());
+		} 
+		catch (SAXException e) 
+		{
+			return new ParseStatus(e)
+			.getEmptyParseResult(content.getUrl(), getConf());
+		} 
+		catch (Exception e) 
+		{
+			LOG.error("Error: ", e);
+			return new ParseStatus(e)
+			.getEmptyParseResult(content.getUrl(), getConf());
+		}
+
+		// get meta directives (we always want to respect these)
+		HTMLMetaProcessor.getMetaTags(metaTags, root, base);
+		if (LOG.isTraceEnabled()) 
+		{
+			LOG.trace("Meta tags for " + base + ": " + metaTags.toString());
+		}
+		
+		// Is our HTML Parser Exclude Enabled?
+		if ((this.nodesExcludeMode != null) && (this.nodesExcludeList != null) && (this.nodesExcludeList.length > 0))
+		{
+			if (this.nodesExcludeMode.equalsIgnoreCase("blacklist"))
+			{
+				LOG.info("Stripping Blacklisted Nodes...");
+				stripBlacklistedNodes(root);
+			}	
+			else if (nodesExcludeMode.equalsIgnoreCase("whitelist"))
+			{
+				
+				rootWhiteListed = (DocumentFragment) root.cloneNode(false);
+				
+				LOG.info("Copying Whitelisted Nodes...");
+				copyWhitelistedNodes(root, rootWhiteListed);
+				
+				// now set our root to point to our copied whitelisted Nodes.
+				root = rootWhiteListed;	
+			}
+		}	
+			
+		if (!metaTags.getNoFollow()) 
+		{              // is it okay to follow links?
+			ArrayList<Outlink> l = new ArrayList<Outlink>();   // extract outlinks
+			URL baseTag = utils.getBase(root);
+			if (LOG.isTraceEnabled())  
+			  LOG.trace("Getting links..."); 
+
+			utils.getOutlinks(baseTag!=null?baseTag:base, l, root);
+			outlinks = l.toArray(new Outlink[l.size()]);
+			if (LOG.isTraceEnabled()) 
+				LOG.trace("found "+outlinks.length+" outlinks in "+content.getUrl());
+		}
+
+		// check meta directives
+		if (!metaTags.getNoIndex()) 
+		{ 
+			// okay to index
+			StringBuffer sb = new StringBuffer();
+			if (LOG.isTraceEnabled()) 
+				LOG.trace("Getting text...");
+			
+			// extract text
+			utils.getText(sb, root); 
+			text = sb.toString();
+			sb.setLength(0);
+			if (LOG.isTraceEnabled())
+				LOG.trace("Getting title...");
+			
+			// extract title	
+			utils.getTitle(sb, root); 
+			title = sb.toString().trim();
+		}
+
+		ParseStatus status = new ParseStatus(ParseStatus.SUCCESS);
+		
+		if (metaTags.getRefresh()) 
+		{
+			status.setMinorCode(ParseStatus.SUCCESS_REDIRECT);
+			status.setArgs(new String[] { metaTags.getRefreshHref().toString(),
+				Integer.toString(metaTags.getRefreshTime()) });
+		}
+		
+		ParseData parseData = new ParseData(status, title, outlinks,
+			content.getMetadata(), metadata);
+		ParseResult parseResult = ParseResult.createParseResult(content.getUrl(),
+			new ParseImpl(text, parseData));
+
+		// run filters on parse
+		ParseResult filteredParse = this.htmlParseFilters.filter(content,
+			parseResult, metaTags, root);
+		if (metaTags.getNoCache()) 
+		{ 
+			// not okay to cache
+			for (Map.Entry<org.apache.hadoop.io.Text, Parse> entry : filteredParse)
+				entry.getValue().getData().getParseMeta().set(Nutch.CACHING_FORBIDDEN_KEY, cachingPolicy);
+		}
+		return filteredParse;
+	}
+
+	protected void stripBlacklistedNodes(Node pNode) 
+	{
+		// Initialize to false by default to continue through nested tags if no match.
+		boolean wasStripped = false;
+		
+		// Go over your list of nodes to exclude.
+		for ( int i = 0 ; i < this.nodesExcludeList.length ; ++i )
+		{
+			// Does the current node have the blacklisted tag.
+			if (this.nodesExcludeList[i][0].equalsIgnoreCase(pNode.getNodeName()) && pNode.hasAttributes()) 
+			{
+				// Does the current node have the blacklisted attribute name.
+				Node idNode = pNode.getAttributes().getNamedItem(this.nodesExcludeList[i][1]);	
+				if (idNode != null)
+				{
+					String idValue = idNode.getNodeValue();					
+					if (idValue != null) 
+					{
+						// does the current node have the blacklisted attribute value.
+						if ( idValue.equalsIgnoreCase(this.nodesExcludeList[i][2]) ) 
+						{
+							// can't remove this node, but we can strip it
+							if (LOG.isTraceEnabled())
+								LOG.trace("Stripping " + pNode.getNodeName() + "#" + idNode.getNodeValue());
+							pNode.setNodeValue("");
+
+							// remove all children for this node
+							while (pNode.hasChildNodes())
+								pNode.removeChild(pNode.getFirstChild());
+
+							
+							wasStripped = true;
+							break;
+						}
 					}
 				}
 			}
 		}
 
-		if (! wasStripped) {
-
-		// now process the children recursively
-		NodeList children = pNode.getChildNodes();
-		if (children != null) {
-
-			int len = children.getLength();
-			for (int i = 0; i < len; i++) {
-				stripNavigation(children.item(i));
+		// Did we strip the top level tag?
+		if (wasStripped == false) 
+		{
+			// If we didn't, process the children tags recursively.
+			NodeList children = pNode.getChildNodes();
+			if (children != null) 
+			{
+				int len = children.getLength();
+				for (int i = 0; i < len; i++) 
+				{
+					stripBlacklistedNodes(children.item(i));
+				}
 			}
-		}
-	  }
+		}		
 	}
 
-  private DocumentFragment parse(InputSource input) throws Exception {
-    if (parserImpl.equalsIgnoreCase("tagsoup"))
-      return parseTagSoup(input);
-    else
-      return parseNeko(input);
-  }
-
-  private DocumentFragment parseTagSoup(InputSource input) throws Exception {
-    HTMLDocumentImpl doc = new HTMLDocumentImpl();
-    DocumentFragment frag = doc.createDocumentFragment();
-    DOMBuilder builder = new DOMBuilder(doc, frag);
-    org.ccil.cowan.tagsoup.Parser reader = new org.ccil.cowan.tagsoup.Parser();
-    reader.setContentHandler(builder);
-    reader.setFeature(org.ccil.cowan.tagsoup.Parser.ignoreBogonsFeature, true);
-    reader.setFeature(org.ccil.cowan.tagsoup.Parser.bogonsEmptyFeature, false);
-    reader
-        .setProperty("http://xml.org/sax/properties/lexical-handler", builder);
-    reader.parse(input);
-    return frag;
-  }
-
-  private DocumentFragment parseNeko(InputSource input) throws Exception {
-    DOMFragmentParser parser = new DOMFragmentParser();
-    try {
-      parser
-          .setFeature(
-              "http://cyberneko.org/html/features/scanner/allow-selfclosing-iframe",
-              true);
-      parser.setFeature("http://cyberneko.org/html/features/augmentations",
-          true);
-      parser.setProperty(
-          "http://cyberneko.org/html/properties/default-encoding",
-          defaultCharEncoding);
-      parser
-          .setFeature(
-              "http://cyberneko.org/html/features/scanner/ignore-specified-charset",
-              true);
-      parser
-          .setFeature(
-              "http://cyberneko.org/html/features/balance-tags/ignore-outside-content",
-              false);
-      parser.setFeature(
-          "http://cyberneko.org/html/features/balance-tags/document-fragment",
-          true);
-      parser.setFeature("http://cyberneko.org/html/features/report-errors",
-          LOG.isTraceEnabled());
-    } catch (SAXException e) {
-    }
-    // convert Document to DocumentFragment
-    HTMLDocumentImpl doc = new HTMLDocumentImpl();
-    doc.setErrorChecking(false);
-    DocumentFragment res = doc.createDocumentFragment();
-    DocumentFragment frag = doc.createDocumentFragment();
-    parser.parse(input, frag);
-    res.appendChild(frag);
-
-    try {
-      while (true) {
-        frag = doc.createDocumentFragment();
-        parser.parse(input, frag);
-        if (!frag.hasChildNodes())
-          break;
-        if (LOG.isInfoEnabled()) {
-          LOG.info(" - new frag, " + frag.getChildNodes().getLength()
-              + " nodes.");
-        }
-        res.appendChild(frag);
-      }
-    } catch (Exception e) {
-      LOG.error("Error: ", e);
-    }
-    ;
-    return res;
-  }
-
-  public static void main(String[] args) throws Exception {
-    // LOG.setLevel(Level.FINE);
-    String name = args[0];
-    String url = "file:" + name;
-    File file = new File(name);
-    byte[] bytes = new byte[(int) file.length()];
-    DataInputStream in = new DataInputStream(new FileInputStream(file));
-    in.readFully(bytes);
-    Configuration conf = NutchConfiguration.create();
-    HtmlParser parser = new HtmlParser();
-    parser.setConf(conf);
-    Parse parse = parser.getParse(
-        new Content(url, url, bytes, "text/html", new Metadata(), conf)).get(
-        url);
-    System.out.println("data: " + parse.getData());
-
-    System.out.println("text: " + parse.getText());
-
-  }
-
-  public void setConf(Configuration conf) {
-    this.conf = conf;
-    this.htmlParseFilters = new HtmlParseFilters(getConf());
-    this.parserImpl = getConf().get("parser.html.impl", "neko");
-    this.defaultCharEncoding = getConf().get(
-        "parser.character.encoding.default", "windows-1252");
-    this.utils = new DOMContentUtils(conf);
-    this.cachingPolicy = getConf().get("parser.caching.forbidden.policy",
-        Nutch.CACHING_FORBIDDEN_CONTENT);
-
-    this.nodesToExclude = null;
-    String divsToExclude = getConf().get("parser.html.NodesToExclude", null);
-    if ((divsToExclude != null) && (divsToExclude.trim().length() > 0)) {
-		LOG.warn("Configured using [parser.html.NodesToExclude] to ignore DIVs with IDs [" + divsToExclude + "]...");
-		StringTokenizer st = new StringTokenizer(divsToExclude , "|");
-		this.nodesToExclude = new String[st.countTokens()][];
-		int i = 0;
-		while ( st.hasMoreTokens() )
+	protected void copyWhitelistedNodes(Node pNode, Node newNode) 
+	{
+		// Initialize to false by default to continue through nested tags if no match.
+		boolean wasFound = false;
+		
+		// Go over your list of nodes.
+		for ( int i = 0 ; i < this.nodesExcludeList.length ; ++i )
 		{
-			this.nodesToExclude[i] = st.nextToken().split(";");
-			i++;
-		}
-  	}
-  }
+			// Does the current node have the whitelisted tag.
+			if (this.nodesExcludeList[i][0].equalsIgnoreCase(pNode.getNodeName()) && pNode.hasAttributes()) 
+			{
+				// Does the current node have a whitelisted attribute name.
+				Node idNode = pNode.getAttributes().getNamedItem(this.nodesExcludeList[i][1]);	
+				if (idNode != null)
+				{
+					String idValue = idNode.getNodeValue();					
+					if (idValue != null) 
+					{
+						// does the current node have the whitelisted attribute value.
+						if ( idValue.equalsIgnoreCase(this.nodesExcludeList[i][2]) ) 
+						{
+							//  Copy this node.
+							if (LOG.isTraceEnabled())
+								LOG.trace("Copying " + pNode.getNodeName() + "#" + idNode.getNodeValue());
+							newNode.appendChild(pNode.cloneNode(true));
+							wasFound = true;
 
-  public Configuration getConf() {
-    return this.conf;
-  }
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		// Did we find the top level tag?
+		if (wasFound == false) 
+		{
+			// If we didn't, process the children tags recursively.
+			NodeList children = pNode.getChildNodes();
+			if (children != null) 
+			{
+				int len = children.getLength();
+				for (int i = 0; i < len; i++) 
+				{
+					copyWhitelistedNodes(children.item(i), newNode);
+				}
+			}
+		}		
+	}
+
+	private DocumentFragment parse(InputSource input) throws Exception 
+	{
+		if (parserImpl.equalsIgnoreCase("tagsoup"))
+			return parseTagSoup(input);
+		else
+			return parseNeko(input);
+	}
+
+	private DocumentFragment parseTagSoup(InputSource input) throws Exception 
+	{
+		HTMLDocumentImpl doc = new HTMLDocumentImpl();
+		DocumentFragment frag = doc.createDocumentFragment();
+		DOMBuilder builder = new DOMBuilder(doc, frag);
+		org.ccil.cowan.tagsoup.Parser reader = new org.ccil.cowan.tagsoup.Parser();
+		reader.setContentHandler(builder);
+		reader.setFeature(org.ccil.cowan.tagsoup.Parser.ignoreBogonsFeature, true);
+		reader.setFeature(org.ccil.cowan.tagsoup.Parser.bogonsEmptyFeature, false);
+		reader.setProperty("http://xml.org/sax/properties/lexical-handler", builder);
+		reader.parse(input);
+		return frag;
+	}
+
+	private DocumentFragment parseNeko(InputSource input) throws Exception 
+	{
+		DOMFragmentParser parser = new DOMFragmentParser();
+		try 
+		{
+			parser.setFeature("http://cyberneko.org/html/features/scanner/allow-selfclosing-iframe",
+				true);
+			parser.setFeature("http://cyberneko.org/html/features/augmentations",
+				true);
+			parser.setProperty("http://cyberneko.org/html/properties/default-encoding",
+				defaultCharEncoding);
+			parser.setFeature("http://cyberneko.org/html/features/scanner/ignore-specified-charset",
+				true);
+			parser.setFeature("http://cyberneko.org/html/features/balance-tags/ignore-outside-content",
+				false);
+			parser.setFeature("http://cyberneko.org/html/features/balance-tags/document-fragment",
+				true);
+			parser.setFeature("http://cyberneko.org/html/features/report-errors",
+				LOG.isTraceEnabled());
+		} 
+		catch (SAXException e) 
+		{
+		}
+    
+		// convert Document to DocumentFragment
+		HTMLDocumentImpl doc = new HTMLDocumentImpl();
+		doc.setErrorChecking(false);
+		DocumentFragment res = doc.createDocumentFragment();
+		DocumentFragment frag = doc.createDocumentFragment();
+		parser.parse(input, frag);
+		res.appendChild(frag);
+
+		try 
+		{
+			while (true) 
+			{
+				frag = doc.createDocumentFragment();
+				parser.parse(input, frag);
+				if (!frag.hasChildNodes())
+					break;
+				if (LOG.isInfoEnabled()) 
+					LOG.info(" - new frag, " + frag.getChildNodes().getLength() + " nodes.");
+				res.appendChild(frag);
+			}
+		} 
+		catch (Exception e) 
+		{
+			LOG.error("Error: ", e);
+		}
+		
+		return res;
+	}
+
+	public static void main(String[] args) throws Exception 
+	{
+		// LOG.setLevel(Level.FINE);
+		String name = args[0];
+		String url = "file:" + name;
+		File file = new File(name);
+		byte[] bytes = new byte[(int) file.length()];
+		DataInputStream in = new DataInputStream(new FileInputStream(file));
+		in.readFully(bytes);
+		Configuration conf = NutchConfiguration.create();
+		HtmlParser parser = new HtmlParser();
+		parser.setConf(conf);
+		Parse parse = parser.getParse(
+			new Content(url, url, bytes, "text/html", new Metadata(), conf)).get(url);
+		System.out.println("data: " + parse.getData());
+
+		System.out.println("text: " + parse.getText());
+	}
+
+	public void setConf(Configuration conf) 
+	{
+		this.conf = conf;
+		this.htmlParseFilters = new HtmlParseFilters(getConf());
+		this.parserImpl = getConf().get("parser.html.impl", "neko");
+		this.defaultCharEncoding = getConf().get(
+			"parser.character.encoding.default", "windows-1252");
+		this.utils = new DOMContentUtils(conf);
+		this.cachingPolicy = getConf().get("parser.caching.forbidden.policy",
+			Nutch.CACHING_FORBIDDEN_CONTENT);
+
+		this.nodesExcludeList = null;
+		
+		// first check the chosen exclude mode if any.
+		String nodesExcludeMode = getConf().get("parser.html.NodesExcludeMode", null);
+		// And gather the list of nodes if applicable.
+		String nodesExcludeList = getConf().get("parser.html.NodesList");
+		
+		// Check if html parser exclude properties were set correctly. 
+		if ((nodesExcludeMode != null) && (nodesExcludeList != null) && (nodesExcludeList.trim().length() > 0))
+		{
+			if (nodesExcludeMode.equalsIgnoreCase("blacklist") || nodesExcludeMode.equalsIgnoreCase("whitelist"))
+			{
+				LOG.warn("Configured using [parser.html.NodesExcludeMode] to " 
+				+ nodesExcludeMode + " DIVs with IDs [" + nodesExcludeList + "]...");
+				
+				// Copy to a new global string with our exclude mode.
+				this.nodesExcludeMode = new String(nodesExcludeMode);
+				
+				// Parse out our nodes by the | string divider.
+				StringTokenizer stringTokenizer = new StringTokenizer(nodesExcludeList , "|");
+				
+				// Initialize our global array now that we know the size.
+				this.nodesExcludeList = new String[stringTokenizer.countTokens()][];
+			
+				// Now split each node by the ; divider to get the tag name, 
+				// the attribute name and the attribute value.
+				int i = 0;
+				while ( stringTokenizer.hasMoreTokens() )
+				{
+					this.nodesExcludeList[i] = stringTokenizer.nextToken().split(";");
+					i++;
+				}				
+			}
+			else
+			{
+				// Missconfigured exclude mode, don't apply settings, skip to parsing.
+				LOG.warn("Missconfigured [parser.html.NodesExcludeMode] property: " 
+					+ nodesExcludeMode + ", skip to parsing");
+			}			
+		}
+		
+		 
+/*		String divsToExclude = getConf().get("parser.html.NodesToExclude", null);
+		if ((divsToExclude != null) && (divsToExclude.trim().length() > 0)) 
+		{
+			LOG.warn("Configured using [parser.html.NodesToExclude] to ignore DIVs with IDs [" + divsToExclude + "]...");
+			StringTokenizer st = new StringTokenizer(divsToExclude , "|");
+			this.nodesToExclude = new String[st.countTokens()][];
+			int i = 0;
+			while ( st.hasMoreTokens() )
+			{
+				this.nodesToExclude[i] = st.nextToken().split(";");
+				i++;
+			}
+		}
+*/ 
+	}
+
+	public Configuration getConf() 
+	{
+		return this.conf;
+	}
 }
