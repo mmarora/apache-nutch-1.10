@@ -149,15 +149,6 @@ public class HtmlParser implements Parser
 	private HtmlParseFilters htmlParseFilters;
 
 	private String cachingPolicy;
-	
-	private String nodesExcludeMode; 
-
-	// The list of nodes to whitelist or blacklist.
-	// Each array has 3 position:
-	// 1st: tag name
-	// 2nd: attribute name
-	// 3rd: attribute value
-	private String [][] nodesExcludeList;
 
 	public ParseResult getParse(Content content) 
 	{
@@ -233,30 +224,27 @@ public class HtmlParser implements Parser
 		{
 			LOG.trace("Meta tags for " + base + ": " + metaTags.toString());
 		}
-		
-		// Is our HTML Parser Exclude Enabled?
-		if ((this.nodesExcludeMode != null) && (this.nodesExcludeList != null) && (this.nodesExcludeList.length > 0))
-		{
-			if (this.nodesExcludeMode.equalsIgnoreCase("blacklist"))
-			{
-				LOG.info("Stripping Blacklisted Nodes...");
-				stripBlacklistedNodes(root);
-			}	
-			else if (nodesExcludeMode.equalsIgnoreCase("whitelist"))
-			{
-				
-				rootWhiteListed = (DocumentFragment) root.cloneNode(false);
-				
-				LOG.info("Copying Whitelisted Nodes...");
-				copyWhitelistedNodes(root, rootWhiteListed);
-				
-				// now set our root to point to our copied whitelisted Nodes.
-				root = rootWhiteListed;	
-			}
-		}	
+
+		// check meta directives
+		if (!metaTags.getNoIndex()) 
+		{ 
+			// okay to index
+			StringBuffer sb = new StringBuffer();
+			if (LOG.isTraceEnabled())
+				LOG.trace("Getting text...");
+			utils.getText(sb, root); // extract text
+			text = sb.toString();
 			
+			sb.setLength(0);
+			if (LOG.isTraceEnabled())
+				LOG.trace("Getting title...");
+			utils.getTitle(sb, root); // extract title
+			title = sb.toString().trim();
+		}
+
 		if (!metaTags.getNoFollow()) 
-		{              // is it okay to follow links?
+		{              
+			// is it okay to follow links?
 			ArrayList<Outlink> l = new ArrayList<Outlink>();   // extract outlinks
 			URL baseTag = utils.getBase(root);
 			if (LOG.isTraceEnabled())  
@@ -266,27 +254,7 @@ public class HtmlParser implements Parser
 			outlinks = l.toArray(new Outlink[l.size()]);
 			if (LOG.isTraceEnabled()) 
 				LOG.trace("found "+outlinks.length+" outlinks in "+content.getUrl());
-		}
-
-		// check meta directives
-		if (!metaTags.getNoIndex()) 
-		{ 
-			// okay to index
-			StringBuffer sb = new StringBuffer();
-			if (LOG.isTraceEnabled()) 
-				LOG.trace("Getting text...");
-			
-			// extract text
-			utils.getText(sb, root); 
-			text = sb.toString();
-			sb.setLength(0);
-			if (LOG.isTraceEnabled())
-				LOG.trace("Getting title...");
-			
-			// extract title	
-			utils.getTitle(sb, root); 
-			title = sb.toString().trim();
-		}
+		}	
 
 		ParseStatus status = new ParseStatus(ParseStatus.SUCCESS);
 		
@@ -312,111 +280,6 @@ public class HtmlParser implements Parser
 				entry.getValue().getData().getParseMeta().set(Nutch.CACHING_FORBIDDEN_KEY, cachingPolicy);
 		}
 		return filteredParse;
-	}
-
-	protected void stripBlacklistedNodes(Node pNode) 
-	{
-		// Initialize to false by default to continue through nested tags if no match.
-		boolean wasStripped = false;
-		
-		// Go over your list of nodes to exclude.
-		for ( int i = 0 ; i < this.nodesExcludeList.length ; ++i )
-		{
-			// Does the current node have the blacklisted tag.
-			if (this.nodesExcludeList[i][0].equalsIgnoreCase(pNode.getNodeName()) && pNode.hasAttributes()) 
-			{
-				// Does the current node have the blacklisted attribute name.
-				Node idNode = pNode.getAttributes().getNamedItem(this.nodesExcludeList[i][1]);	
-				if (idNode != null)
-				{
-					String idValue = idNode.getNodeValue();					
-					if (idValue != null) 
-					{
-						// does the current node have the blacklisted attribute value.
-						if ( idValue.equalsIgnoreCase(this.nodesExcludeList[i][2]) ) 
-						{
-							// can't remove this node, but we can strip it
-							if (LOG.isTraceEnabled())
-								LOG.trace("Stripping " + pNode.getNodeName() + "#" + idNode.getNodeValue());
-							pNode.setNodeValue("");
-
-							// remove all children for this node
-							while (pNode.hasChildNodes())
-								pNode.removeChild(pNode.getFirstChild());
-
-							
-							wasStripped = true;
-							break;
-						}
-					}
-				}
-			}
-		}
-
-		// Did we strip the top level tag?
-		if (wasStripped == false) 
-		{
-			// If we didn't, process the children tags recursively.
-			NodeList children = pNode.getChildNodes();
-			if (children != null) 
-			{
-				int len = children.getLength();
-				for (int i = 0; i < len; i++) 
-				{
-					stripBlacklistedNodes(children.item(i));
-				}
-			}
-		}		
-	}
-
-	protected void copyWhitelistedNodes(Node pNode, Node newNode) 
-	{
-		// Initialize to false by default to continue through nested tags if no match.
-		boolean wasFound = false;
-		
-		// Go over your list of nodes.
-		for ( int i = 0 ; i < this.nodesExcludeList.length ; ++i )
-		{
-			// Does the current node have the whitelisted tag.
-			if (this.nodesExcludeList[i][0].equalsIgnoreCase(pNode.getNodeName()) && pNode.hasAttributes()) 
-			{
-				// Does the current node have a whitelisted attribute name.
-				Node idNode = pNode.getAttributes().getNamedItem(this.nodesExcludeList[i][1]);	
-				if (idNode != null)
-				{
-					String idValue = idNode.getNodeValue();					
-					if (idValue != null) 
-					{
-						// does the current node have the whitelisted attribute value.
-						if ( idValue.equalsIgnoreCase(this.nodesExcludeList[i][2]) ) 
-						{
-							//  Copy this node.
-							if (LOG.isTraceEnabled())
-								LOG.trace("Copying " + pNode.getNodeName() + "#" + idNode.getNodeValue());
-							newNode.appendChild(pNode.cloneNode(true));
-							wasFound = true;
-
-							break;
-						}
-					}
-				}
-			}
-		}
-
-		// Did we find the top level tag?
-		if (wasFound == false) 
-		{
-			// If we didn't, process the children tags recursively.
-			NodeList children = pNode.getChildNodes();
-			if (children != null) 
-			{
-				int len = children.getLength();
-				for (int i = 0; i < len; i++) 
-				{
-					copyWhitelistedNodes(children.item(i), newNode);
-				}
-			}
-		}		
 	}
 
 	private DocumentFragment parse(InputSource input) throws Exception 
@@ -523,63 +386,6 @@ public class HtmlParser implements Parser
 		this.utils = new DOMContentUtils(conf);
 		this.cachingPolicy = getConf().get("parser.caching.forbidden.policy",
 			Nutch.CACHING_FORBIDDEN_CONTENT);
-
-		this.nodesExcludeList = null;
-		
-		// first check the chosen exclude mode if any.
-		String nodesExcludeMode = getConf().get("parser.html.NodesExcludeMode", null);
-		// And gather the list of nodes if applicable.
-		String nodesExcludeList = getConf().get("parser.html.NodesList");
-		
-		// Check if html parser exclude properties were set correctly. 
-		if ((nodesExcludeMode != null) && (nodesExcludeList != null) && (nodesExcludeList.trim().length() > 0))
-		{
-			if (nodesExcludeMode.equalsIgnoreCase("blacklist") || nodesExcludeMode.equalsIgnoreCase("whitelist"))
-			{
-				LOG.warn("Configured using [parser.html.NodesExcludeMode] to " 
-				+ nodesExcludeMode + " DIVs with IDs [" + nodesExcludeList + "]...");
-				
-				// Copy to a new global string with our exclude mode.
-				this.nodesExcludeMode = new String(nodesExcludeMode);
-				
-				// Parse out our nodes by the | string divider.
-				StringTokenizer stringTokenizer = new StringTokenizer(nodesExcludeList , "|");
-				
-				// Initialize our global array now that we know the size.
-				this.nodesExcludeList = new String[stringTokenizer.countTokens()][];
-			
-				// Now split each node by the ; divider to get the tag name, 
-				// the attribute name and the attribute value.
-				int i = 0;
-				while ( stringTokenizer.hasMoreTokens() )
-				{
-					this.nodesExcludeList[i] = stringTokenizer.nextToken().split(";");
-					i++;
-				}				
-			}
-			else
-			{
-				// Missconfigured exclude mode, don't apply settings, skip to parsing.
-				LOG.warn("Missconfigured [parser.html.NodesExcludeMode] property: " 
-					+ nodesExcludeMode + ", skip to parsing");
-			}			
-		}
-		
-		 
-/*		String divsToExclude = getConf().get("parser.html.NodesToExclude", null);
-		if ((divsToExclude != null) && (divsToExclude.trim().length() > 0)) 
-		{
-			LOG.warn("Configured using [parser.html.NodesToExclude] to ignore DIVs with IDs [" + divsToExclude + "]...");
-			StringTokenizer st = new StringTokenizer(divsToExclude , "|");
-			this.nodesToExclude = new String[st.countTokens()][];
-			int i = 0;
-			while ( st.hasMoreTokens() )
-			{
-				this.nodesToExclude[i] = st.nextToken().split(";");
-				i++;
-			}
-		}
-*/ 
 	}
 
 	public Configuration getConf() 

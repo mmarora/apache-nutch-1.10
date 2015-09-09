@@ -174,22 +174,28 @@ public class DOMContentUtils {
    * 
    * @return true if a title node was found, false otherwise
    */
-  public boolean getTitle(StringBuffer sb, Node node) {
+  public boolean getTitle(StringBuffer sb, Node node) 
+  {
 
     NodeWalker walker = new NodeWalker(node);
 
-    while (walker.hasNext()) {
+    while (walker.hasNext()) 
+    {
 
       Node currentNode = walker.nextNode();
       String nodeName = currentNode.getNodeName();
       short nodeType = currentNode.getNodeType();
 
-      if ("body".equalsIgnoreCase(nodeName)) { // stop after HEAD
+      if ("body".equalsIgnoreCase(nodeName)) 
+      { 
+		  // stop after HEAD
         return false;
       }
 
-      if (nodeType == Node.ELEMENT_NODE) {
-        if ("title".equalsIgnoreCase(nodeName)) {
+      if (nodeType == Node.ELEMENT_NODE) 
+      {
+        if ("title".equalsIgnoreCase(nodeName)) 
+        {
           getText(sb, currentNode);
           return true;
         }
