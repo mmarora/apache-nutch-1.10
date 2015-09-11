@@ -191,6 +191,37 @@ public class DOMContentUtils
 	}
 
 	/**
+	* This method takes a StringBuffer, a DOM Node and a unique heading tag.
+	* And will append the text content found beneath the first heading tag.
+	* Note: the implementation of this function is exactly like getTitle.
+	* @return true if a heading node was found, false otherwise
+	*/
+	public boolean getContentHeading(StringBuffer sb, Node node, String heading_tag) 
+	{
+
+		NodeWalker walker = new NodeWalker(node);
+
+		while (walker.hasNext()) 
+		{
+
+			Node currentNode = walker.nextNode();
+			String nodeName = currentNode.getNodeName();
+			short nodeType = currentNode.getNodeType();
+
+			if (nodeType == Node.ELEMENT_NODE) 
+			{
+				if (heading_tag.equalsIgnoreCase(nodeName)) 
+				{
+					getText(sb, currentNode);
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	* This method takes a {@link StringBuffer} and a DOM {@link Node}, and will
 	* append the content text found beneath the first <code>title</code> node to
 	* the <code>StringBuffer</code>.

@@ -79,7 +79,7 @@
      <ant dir="urlnormalizer-querystring" target="deploy"/>
      <ant dir="urlnormalizer-regex" target="deploy"/>
      <ant dir="urlnormalizer-slash" target="deploy"/>
-  	 <ant dir="exclude-blacklist-whitelist" target="deploy"/>
+  	 <ant dir="parse-html-filter-select-nodes" target="deploy"/>
   </target>
 
   <!-- ====================================================== -->
@@ -183,6 +183,6 @@
     <ant dir="urlnormalizer-querystring" target="clean"/>
     <ant dir="urlnormalizer-regex" target="clean"/>
     <ant dir="urlnormalizer-slash" target="clean"/>
-    <ant dir="exclude-blacklist-whitelist" target="clean"/>
+    <ant dir="parse-html-filter-select-nodes" target="clean"/>
   </target>
 </project>

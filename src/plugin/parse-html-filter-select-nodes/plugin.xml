@@ -16,29 +16,22 @@
  limitations under the License.
 -->
 <plugin
-   id="index-blacklist-whitelist"
-   name="Blacklist and Whitelist Parser and Indexer"
+   id="parse-html-filter-select-nodes"
+   name="HTML Parse filter to select nodes based on HTML tags"
    version="1.0.0"
-   provider-name="scintillation.at">
+   provider-name="osohm.com">
 
    <runtime>
-      <library name="index-blacklist-whitelist.jar">
+      <library name="parse-html-filter-select-nodes.jar">
          <export name="*"/>
       </library>
    </runtime>
-
-   <extension id="at.scintillation.nutch.BlacklistWhitelistIndexer"
-              name="Nutch Blacklist and Whitelist Indexing Filter"
-              point="org.apache.nutch.indexer.IndexingFilter">
-      <implementation id="BlacklistWhitelistIndexer"
-                      class="at.scintillation.nutch.BlacklistWhitelistIndexer"/>
-   </extension>
    
-	<extension id="at.scintillation.nutch.BlacklistWhitelistParser"
-              name="Nutch Blacklist and Whitelist Parsing Filter"
+	<extension id="com.osohm.nutch.parse.html.filter.SelectNodesParseFilter"
+              name="Nutch Select Nodes Parse Filter"
               point="org.apache.nutch.parse.HtmlParseFilter">
-      <implementation id="BlacklistWhitelistParser"
-                      class="at.scintillation.nutch.BlacklistWhitelistParser"/>
+      <implementation id="SelectNodesParseFilter"
+                      class="com.osohm.nutch.parse.html.filter.SelectNodesParseFilter"/>
    </extension>
 
 </plugin>
